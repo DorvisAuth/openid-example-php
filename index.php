@@ -17,12 +17,26 @@ try {
     return;
 }
 
+if (!is_dir(__DIR__ . '/cache')) {
+    mkdir(__DIR__ . '/cache', 0700);
+}
+$discoveryCacheFile = __DIR__ . '/cache/discovery-' . hash('sha256', $config->oidc->issuer_url) . '.json';
+
 try {
     $client = new Client(['verify' => \Composer\CaBundle\CaBundle::getSystemCaRootBundlePath()]);
-    $res = $client->request('GET', "{$config->oidc->issuer_url}/.well-known/openid-configuration");
-    $wellKnownResponse = (string) $res->getBody();
+    if (is_file($discoveryCacheFile) && (time() - filemtime($discoveryCacheFile)) < 21600) {
+        $wellKnownResponse = file_get_contents($discoveryCacheFile);
+    } else {
+        $res = $client->request('GET', "{$config->oidc->issuer_url}/.well-known/openid-configuration");
+        $wellKnownResponse = (string) $res->getBody();
+        file_put_contents($discoveryCacheFile, $wellKnownResponse);
+        chmod($discoveryCacheFile, 0600);
+    }
     $data = json_decode($wellKnownResponse, true);
-} catch (\Exception $e) {
+    if (!is_array($data)) {
+        throw new \RuntimeException("Discovery document was not JSON");
+    }
+} catch (\Throwable $e) {
     serveError("Failed to load OIDC discovery document: " . $e->getMessage());
     return;
 }
@@ -61,8 +75,10 @@ if (array_key_exists($requestUri, $routes)) {
 }
 
 function login(Config $config, GenericProvider $provider){
-    session_unset();
-    session_regenerate_id(true);
+    if (empty($_SESSION['user'])) {
+        session_unset();
+        session_regenerate_id(true);
+    }
 
     $state = bin2hex(random_bytes(16));
     $_SESSION['oauth2state'] = $state;
@@ -70,17 +86,24 @@ function login(Config $config, GenericProvider $provider){
     $nonce = bin2hex(random_bytes(16));
     $_SESSION['oidc_nonce'] = $nonce;
 
-    $defaultAuthUrl = $provider->getAuthorizationUrl(['state' => $state, 'nonce' => $nonce]);
+    $codeVerifier = bin2hex(random_bytes(32));
+    $_SESSION['oidc_pkce_verifier'] = $codeVerifier;
+    $codeChallenge = rtrim(strtr(base64_encode(hash('sha256', $codeVerifier, true)), '+/', '-_'), '=');
+
+    $authParams = [
+        'state'                 => $state,
+        'nonce'                 => $nonce,
+        'code_challenge'        => $codeChallenge,
+        'code_challenge_method' => 'S256',
+    ];
+
+    $defaultAuthUrl = $provider->getAuthorizationUrl($authParams);
 
     $providers = [];
-    foreach ($config->acr_values as $acrValue) {
+    foreach ($config->providers as $acrValue) {
         $providers[] = [
             'label' => $acrValue,
-            'url'   => $provider->getAuthorizationUrl([
-                'state'      => $state,
-                'nonce'      => $nonce,
-                'acr_values' => "idp:{$acrValue}",
-            ]),
+            'url'   => $provider->getAuthorizationUrl($authParams + ['acr_values' => "idp:{$acrValue}"]),
         ];
     }
 
@@ -88,16 +111,6 @@ function login(Config $config, GenericProvider $provider){
 }
 
 function callback(GenericProvider $provider, Config $config, Client $client, array $data){
-    try {
-        $jwks_uri = $data['jwks_uri'];
-        $jwksResponse = $client->request('GET', $jwks_uri);
-        $jwksData = json_decode((string) $jwksResponse->getBody(), true);
-        $tokenData = JWK::parseKeySet($jwksData);
-    } catch (\Exception $e) {
-        serveError("Failed to load signing keys: " . $e->getMessage());
-        return;
-    }
-
     if (!empty($_GET['error'])){
         $message = $_GET['error'];
         serveError($message);
@@ -114,6 +127,23 @@ function callback(GenericProvider $provider, Config $config, Client $client, arr
         return;
     }
     unset($_SESSION['oauth2state']);
+
+    try {
+        $jwks_uri = $data['jwks_uri'];
+        $jwksResponse = $client->request('GET', $jwks_uri);
+        $jwksData = json_decode((string) $jwksResponse->getBody(), true);
+        $tokenData = JWK::parseKeySet($jwksData);
+    } catch (\Exception $e) {
+        serveError("Failed to load signing keys: " . $e->getMessage());
+        return;
+    }
+
+    if (empty($_SESSION['oidc_pkce_verifier'])) {
+        serveError("Missing PKCE verifier");
+        return;
+    }
+    $provider->setPkceCode($_SESSION['oidc_pkce_verifier']);
+    unset($_SESSION['oidc_pkce_verifier']);
 
     try {
         $accessToken = $provider->getAccessToken('authorization_code', ['code' => $_GET['code']]);
@@ -156,7 +186,10 @@ function callback(GenericProvider $provider, Config $config, Client $client, arr
 function logout(Config $config, array $data){
     $rawIdToken = $_SESSION['id_token'] ?? '';
     $redirUri = baseUrl();
-    $logoutUrl = $data['end_session_endpoint'] . "?id_token_hint=" . urlencode($rawIdToken) . "&post_logout_redirect_uri=" . urlencode($redirUri);
+    $logoutUrl = $redirUri;
+    if (!empty($data['end_session_endpoint']) && !empty($rawIdToken)) {
+        $logoutUrl = $data['end_session_endpoint'] . "?id_token_hint=" . urlencode($rawIdToken) . "&post_logout_redirect_uri=" . urlencode($redirUri);
+    }
 
     $_SESSION = [];
     if (ini_get('session.use_cookies')) {

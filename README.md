@@ -66,7 +66,7 @@ The application will start at <http://localhost:3000>
 | `OIDC_CLIENT_ID` | Your Dorvis client ID | `dorvis_demo_post` | `your-client-id` |
 | `OIDC_CLIENT_SECRET` | Your Dorvis client secret | `dorvis_demo_secret` | `your-secret` |
 | `OIDC_REDIRECT_URL` | Callback URL after authentication (must be whitelisted in Dorvis) | `http://localhost:3000/callback` | `https://your-domain.com/callback` |
-| `ACR_VALUES` | Comma-separated identity providers<br>to show on login page | `Swedbank,Seb,Luminor,`<br>`Citadele,eParaksts,`<br>`eParaksts-mobile,Smartid` | `Swedbank,Seb,Luminor,`<br>`Citadele,eParaksts,`<br>`eParaksts-mobile,Smartid` |
+| `PROVIDERS` | Comma-separated identity providers<br>to show on login page (each prefixed with `idp:` at request time and sent as the `acr_values` query parameter on the auth request) | `Swedbank,Seb,Luminor,`<br>`Citadele,eParaksts,`<br>`eParaksts-mobile,Smartid` | `Swedbank,Seb,Luminor,`<br>`Citadele,eParaksts,`<br>`eParaksts-mobile,Smartid` |
 
 ## Learn More
 

@@ -7,12 +7,12 @@ use Respect\Validation\ValidatorBuilder as v;
 class Config {
     public function __construct(
         public OIDCConfig $oidc,
-        public array $acr_values,
+        public array $providers,
     ){}
 
     public function validate(): void {
         v::property('oidc', v::objectType()->not(v::blank()))
-        ->property('acr_values', v::arrayType()->not(v::blank()))
+        ->property('providers', v::arrayType()->not(v::blank()))
         ->assert($this);
 
         $this->oidc->validate();
@@ -48,9 +48,9 @@ function loadConfig(): Config{
         $_ENV['OIDC_CLIENT_SECRET'] ?? loadRemoteSecret('OIDC_CLIENT_SECRET') ?? ''
     );
 
-    $acrValues = explode(',', $_ENV['ACR_VALUES'] ?? '');
+    $providers = explode(',', $_ENV['PROVIDERS'] ?? '');
 
-    $config = new Config($oidc, $acrValues);
+    $config = new Config($oidc, $providers);
 
     $config->validate();
 

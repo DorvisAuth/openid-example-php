@@ -14,7 +14,7 @@ final class SmokeTest extends TestCase
         putenv('OIDC_REDIRECT_URL=http://localhost:3000/callback');
         putenv('OIDC_CLIENT_ID=dorvis_demo_post');
         putenv('OIDC_CLIENT_SECRET=dorvis_demo_secret');
-        putenv('ACR_VALUES=idp:Swedbank,idp:Seb');
+        putenv('PROVIDERS=idp:Swedbank,idp:Seb');
 
         loadConfig();
 
