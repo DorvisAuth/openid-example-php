@@ -6,7 +6,7 @@ Simple demonstration application built on vanilla PHP showing how to integrate [
 
 ### Prerequisites
 
-- **PHP** (version 8.1 or higher)
+- **PHP** (version 8.5 or higher)
 - **Composer** (version 2.0 or higher)
 - **Dorvis client credentials** (see setup below)
 
